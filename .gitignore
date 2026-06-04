@@ -1,0 +1,77 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+eggs/
+parts/
+var/
+sdist/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Data — keep structure, ignore content
+data/raw/*
+data/processed/*
+data/holdout/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/holdout/.gitkeep
+
+# ML artifacts
+*.pt
+*.pth
+*.ckpt
+*.h5
+*.pkl
+*.joblib
+runs/
+wandb/
+mlruns/
+lightning_logs/
+
+# OpenCV / media
+*.mp4
+*.avi
+*.mov
+*.mkv
+*.jpg
+*.jpeg
+*.png
+*.bmp
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Claude Code local config
+.claude/
+
+# Testing / coverage
+.pytest_cache/
+.coverage
+htmlcov/
