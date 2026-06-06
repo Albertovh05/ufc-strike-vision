@@ -31,6 +31,7 @@ ENV/
 data/raw/*
 data/processed/*
 data/holdout/*
+data/videos/*
 !data/raw/.gitkeep
 !data/processed/.gitkeep
 !data/holdout/.gitkeep

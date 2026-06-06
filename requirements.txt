@@ -4,3 +4,4 @@ pandas
 numpy
 opencv-python
 pytest
+yt-dlp

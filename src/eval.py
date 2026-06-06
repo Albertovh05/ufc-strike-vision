@@ -57,7 +57,8 @@ def evaluate(predictions: list[StrikePrediction], fight_id: str) -> EvalResult:
                 "pred_total": p.total_strikes,
             }
             for p in predictions
-        ]
+        ],
+        columns=["round", "fighter_index", "pred_sig", "pred_total"],
     )
     merged = gt.merge(pred_df, on=["round", "fighter_index"], how="left").fillna(0)
     merged["err_sig"] = (merged["sig_strikes"] - merged["pred_sig"]).abs()

@@ -65,6 +65,16 @@ pip install -r requirements.txt
 python -m src.scraper
 ```
 
+**Collect YouTube full fights + UFCStats counts**:
+
+```bash
+python -m src.collect_youtube_fights --limit 5
+```
+
+This writes `data/raw/youtube_fights_manifest.json` plus one UFCStats JSON file
+per matched fight. It records YouTube URLs by default. To also store authorized
+local video files under ignored `data/videos/`, add `--download-videos`.
+
 **Run tests:**
 
 ```bash

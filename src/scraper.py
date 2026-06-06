@@ -1,24 +1,70 @@
 """UFCStats scraper — per-round strike stats for every fight on an event card."""
 
 import argparse
+import hashlib
 import json
 import re
 import time
 import unicodedata
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import urljoin
 
 import requests
 from bs4 import BeautifulSoup
 
 RAW_DIR = Path(__file__).parent.parent / "data" / "raw"
 _DELAY = 0.8  # seconds between requests — be polite
+_CHALLENGE_NONCE_RE = re.compile(r'nonce="([^"]+)"')
+_CHALLENGE_ZEROS_RE = re.compile(r"target=new Array\((\d+)\+1\)")
 
 
 # ── HTTP ───────────────────────────────────────────────────────────────────
 
+class UFCStatsSession(requests.Session):
+    """Requests session that handles UFCStats' lightweight JS proof-of-work gate."""
+
+    def request(self, method: str, url: str, **kwargs) -> requests.Response:
+        response = super().request(method, url, **kwargs)
+        if method.upper() == "GET" and _is_challenge_page(response.text):
+            _solve_challenge(self, response, timeout=kwargs.get("timeout"))
+            response = super().request(method, url, **kwargs)
+        return response
+
+
+def _is_challenge_page(html: str) -> bool:
+    return "Checking your browser" in html and "/__c" in html
+
+
+def _solve_challenge(
+    session: requests.Session,
+    response: requests.Response,
+    timeout: float | tuple[float, float] | None = None,
+) -> None:
+    nonce_match = _CHALLENGE_NONCE_RE.search(response.text)
+    zeros_match = _CHALLENGE_ZEROS_RE.search(response.text)
+    if not nonce_match or not zeros_match:
+        raise RuntimeError("UFCStats challenge page format changed")
+
+    nonce = nonce_match.group(1)
+    target = "0" * int(zeros_match.group(1))
+    n = 0
+    while hashlib.sha256(f"{nonce}:{n}".encode()).hexdigest()[: len(target)] != target:
+        n += 1
+
+    challenge_url = urljoin(response.url, "/__c")
+    challenge_response = requests.Session.request(
+        session,
+        "POST",
+        challenge_url,
+        data={"nonce": nonce, "n": str(n)},
+        timeout=timeout,
+    )
+    challenge_response.raise_for_status()
+
+
 def _session() -> requests.Session:
-    s = requests.Session()
+    s = UFCStatsSession()
     s.headers["User-Agent"] = "ufc-tracker/0.1 (research)"
     return s
 
@@ -124,12 +170,24 @@ def _data_rows(section) -> list:
 def _find_rows(soup: BeautifulSoup, keyword: str) -> list:
     """Return data rows from the per-round section whose heading matches keyword."""
     for cls_suffix in ("_rnd", "_tot"):
-        for section in soup.select("section.b-fight-details__section"):
+        sections = soup.select("section.b-fight-details__section")
+        for idx, section in enumerate(sections):
             link = section.select_one(f"p[class*='collapse-link{cls_suffix}']")
             if link and keyword.lower() in link.get_text(strip=True).lower():
                 rows = _data_rows(section)
                 if rows:
                     return rows
+                following: list[list] = []
+                for candidate in sections[idx + 1:]:
+                    if candidate.select_one("p[class*='collapse-link']"):
+                        break
+                    candidate_rows = _data_rows(candidate)
+                    if candidate_rows:
+                        if "per round" in candidate.get_text(" ", strip=True).lower():
+                            return candidate_rows
+                        following.append(candidate_rows)
+                if following:
+                    return following[-1]
     return []
 
 
