@@ -1,27 +1,60 @@
-# UFC Strike Tracker
+# UFC Strike Vision
 
-Automated per-round strike counting from UFC broadcast video, validated against
-[UFCStats](http://ufcstats.com) ground truth.
+Computer-vision tooling for turning UFC broadcast video into a structured
+timeline of strikes. The goal is to detect individual strike attempts, classify
+their type, attribute them to the correct fighter, and measure the time between
+events so coaches, managers, and analysts can study repeatable fight patterns.
 
 ## What it does
 
-UFC broadcasts carry official strike statistics (significant strikes, total strikes,
-accuracy, targets) that are published on UFCStats after every event. This project
-builds a computer-vision pipeline that reproduces those counts directly from video,
-round by round, fighter by fighter — without relying on the in-broadcast HUD overlay.
+UFCStats provides useful round-level totals after each event, but it does not
+provide a per-strike timeline, strike-type labels, lead/rear limb context, stance,
+or the time gaps between actions. This project builds the pipeline needed to
+learn those events directly from video.
 
-The pipeline has four stages:
+The intended output is one event per detected strike or takedown:
+
+```json
+{
+  "timestamp_ms": 12430,
+  "fighter": "A",
+  "strike_type": "jab",
+  "stance": "orthodox",
+  "hand_leg": "lead",
+  "combat_state": "distance",
+  "confidence": 0.87
+}
+```
+
+Once those events exist, round-level counts become a derived output rather than
+the primary objective. The richer timeline can support coach/manager workflows
+such as combination detection, pace analysis, stance-switch patterns, counter
+timing, and opponent tendency datasets.
+
+Minimum strike taxonomy:
+
+| Category | Types |
+|---|---|
+| Punches | jab, cross, lead hook, rear hook, lead uppercut, rear uppercut, overhand |
+| Kicks | lead leg kick, rear leg kick, body kick, head kick |
+| Other | knee, elbow, takedown |
+
+The pipeline is built in stages:
 
 | Stage | Module | Description |
 |---|---|---|
-| Scrape | `src/scraper.py` | Downloads per-fight strike totals from UFCStats as JSON |
-| Preprocess | `src/preprocess.py` | Extracts and normalises video frames at 25 fps |
-| Detect | `src/detect.py` | Detects individual strike events in the frame sequence |
-| Re-ID | `src/reid.py` | Associates each detected strike with a fighter identity |
+| Collect | `src/collect_youtube_fights.py` | Finds full-fight videos and matches them to UFCStats fight pages |
+| Scrape | `src/scraper.py` | Downloads UFCStats round-level strike counts for weak validation |
+| Preprocess | `src/preprocess.py` | Extracts normalized video frames for model input |
+| Detect | `src/detect.py` | Detects fighters, tracks people, and proposes candidate strike moments |
+| Re-ID | `src/reid.py` | Associates tracked people with Fighter A or Fighter B |
+| Classify | planned | Classifies candidate clips into the strike taxonomy above |
+| Timeline | planned | Emits timestamped strike events and time-between-strike features |
 
-Predictions are compared against UFCStats ground truth using the eval harness in
-`src/eval.py`. Five fights are held out in `data/holdout/` and never touched during
-development; all reported numbers come from this set.
+UFCStats counts are used as a weak validation target: after the model detects and
+classifies events, its derived per-round counts should be close to official
+round-level totals. Strike-type accuracy requires a separately labeled clip
+dataset because UFCStats does not provide per-strike labels or timestamps.
 
 ## Project layout
 
@@ -29,12 +62,14 @@ development; all reported numbers come from this set.
 ufc-tracker/
   data/
     raw/          # UFCStats JSON files (one per fight)
+    videos/       # Local full-fight videos; ignored by git
     processed/    # Extracted video frames
     holdout/      # 5 fights reserved for final eval
   src/
+    collect_youtube_fights.py # YouTube/UFCStats matching manifest builder
     scraper.py    # UFCStats scraper
     preprocess.py # Frame extraction and normalisation
-    detect.py     # Strike detection model
+    detect.py     # Detection/tracking/candidate strike primitives
     reid.py       # Fighter re-identification
     eval.py       # Evaluation harness
   notebooks/
@@ -65,7 +100,7 @@ pip install -r requirements.txt
 python -m src.scraper
 ```
 
-**Collect YouTube full fights + UFCStats counts**:
+**Collect YouTube full-fight metadata + UFCStats counts**:
 
 ```bash
 python -m src.collect_youtube_fights --limit 5
@@ -81,7 +116,7 @@ local video files under ignored `data/videos/`, add `--download-videos`.
 pytest tests/
 ```
 
-**Evaluate predictions against holdout fights:**
+**Evaluate derived counts against holdout fights:**
 
 ```python
 from src.eval import StrikePrediction, run_holdout_eval
@@ -99,12 +134,21 @@ print(summary)
 
 ## Metrics
 
-Primary metric is **Mean Absolute Error (MAE)** on significant-strike count per
-round per fighter, measured on the held-out five fights. A secondary MAE is reported
-for total strikes.
+The final system needs several validation views:
+
+| Metric | Purpose |
+|---|---|
+| Strike-type accuracy | Measures whether candidate clips are classified correctly, using individually labeled strike clips |
+| Count error vs UFCStats | Checks whether timeline-derived per-round counts stay close to official UFCStats totals |
+| Timestamp quality | Measures whether event times are close enough for sequence and time-gap analysis |
+| Fighter attribution accuracy | Measures whether each event is assigned to the correct fighter |
+
+The existing `src/eval.py` harness currently covers count error against UFCStats.
+The strike-type and timestamp metrics depend on building a labeled clip dataset.
 
 ## Data policy
 
 Raw scraped data is excluded from version control (see `.gitignore`). Do not commit
-video files or fighter images. Holdout fight IDs should not be used during model
+video files, fighter images, labeled clips, or derived datasets that may contain
+sensitive or licensed material. Holdout fight IDs should not be used during model
 development or hyperparameter tuning.
